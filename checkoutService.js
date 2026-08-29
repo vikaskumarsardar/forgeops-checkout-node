@@ -1,62 +1,70 @@
 /**
- * Production Checkout Microservice
- * Handles cart calculation, promo codes, and tax estimation.
+ * Production Checkout Microservice (Target Microservice)
+ * Instrumented with official Prometheus metrics via `prom-client`.
  */
-
 const { execSync } = require('child_process');
 const path = require('path');
+const client = require('prom-client');
+
+// Initialize Prometheus Default Metrics (CPU, Memory, Handles)
+client.collectDefaultMetrics({ prefix: 'checkout_service_' });
+
+// Prometheus Counter for HTTP Requests
+const httpRequestsTotal = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests processed by checkout service',
+  labelNames: ['service', 'status', 'method']
+});
+
+// Prometheus Histogram for Request Duration
+const httpRequestDurationSeconds = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['service', 'method'],
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5]
+});
 
 class CheckoutService {
   constructor() {
-    this.refreshGitInfo();
+    this.version = "1.0.4";
+    this.serviceName = "checkout-service";
+    this.register = client.register;
   }
 
-  refreshGitInfo() {
-    try {
-      this.version = require(path.resolve(process.cwd(), 'package.json')).version || "1.0.5";
-      this.lastCommit = execSync('git rev-parse --short HEAD', { encoding: 'utf8', cwd: process.cwd() }).trim();
-    } catch (err) {
-      this.version = "1.0.5";
-      this.lastCommit = "head";
-    }
-  }
-
-  calculateDiscount(subtotal, discountCode) {
-    if (!discountCode) return 0;
-    const code = discountCode.toLowerCase();
-    if (code === "save10") return subtotal * 0.10;
-    if (code === "save20") return subtotal * 0.20;
-    return 0;
-  }
-
-  // PRODUCTION BUG: Unhandled taxConfig calculation when taxConfig object or rate is missing!
-  calculateTax(subtotal, taxConfig) {
-    // Throws TypeError: Cannot read properties of undefined (reading 'rate') when taxConfig is omitted!
-    return subtotal * taxConfig.rate;
+  applyPromoRules(cart) {
+    // Unhandled TypeError when promoRules is undefined
+    const activeRule = cart.promoRules.find(r => r.active === true);
+    return activeRule ? activeRule.discount : 0;
   }
 
   processCheckout(cart) {
-    const { userId, items, discountCode, taxConfig } = cart;
-    if (!items || items.length === 0) {
-      throw new Error("Invalid cart: items list cannot be empty");
+    const endTimer = httpRequestDurationSeconds.startTimer({ service: this.serviceName, method: 'POST' });
+    try {
+      const { userId, items, discountCode } = cart;
+      const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const promoExtra = this.applyPromoRules(cart);
+      const total = subtotal - promoExtra;
+
+      httpRequestsTotal.inc({ service: this.serviceName, status: '200', method: 'POST' });
+      endTimer();
+
+      return {
+        status: "SUCCESS",
+        orderId: "ORD-" + Math.floor(Math.random() * 90000 + 10000),
+        subtotal,
+        total,
+        currency: "USD",
+        timestamp: new Date().toISOString()
+      };
+    } catch (err) {
+      httpRequestsTotal.inc({ service: this.serviceName, status: '500', method: 'POST' });
+      endTimer();
+      throw err;
     }
+  }
 
-    const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const discount = this.calculateDiscount(subtotal, discountCode);
-    const tax = this.calculateTax(subtotal, taxConfig);
-    const total = subtotal - discount + tax;
-
-    return {
-      status: "SUCCESS",
-      orderId: `ORD-${Date.now()}`,
-      userId: userId || "guest",
-      subtotal,
-      discount,
-      tax,
-      total,
-      currency: "USD",
-      timestamp: new Date().toISOString()
-    };
+  async getMetricsText() {
+    return await client.register.metrics();
   }
 }
 
