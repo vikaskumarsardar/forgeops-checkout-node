@@ -1,0 +1,14 @@
+{
+  "name": "forgeops-checkout-node",
+  "version": "1.0.4",
+  "description": "Production Node.js Checkout Microservice (ForgeOps Target Service)",
+  "main": "checkoutService.js",
+  "scripts": {
+    "start": "node checkoutService.js",
+    "test": "node tests/checkout.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "prom-client": "^15.1.3"
+  }
+}
