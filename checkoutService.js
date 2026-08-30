@@ -78,6 +78,7 @@ app.post('/api/v1/checkout', (req, res) => {
   } catch (err) {
     httpRequestsTotal.inc({ service: 'checkout-service', method: 'POST', status: '500', path: '/api/v1/checkout' });
     endTimer({ status: '500' });
+    console.error(`[ERROR] [checkout-service] 500 Internal Server Error: ${err.message}\n${err.stack}`);
     res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
