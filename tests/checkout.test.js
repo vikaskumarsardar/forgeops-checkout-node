@@ -1,5 +1,5 @@
 const assert = require('assert');
-const checkoutService = require('../checkoutService');
+const { checkoutService } = require('../checkoutService');
 
 console.log("🧪 Running CheckoutService Integration Test Suite...");
 
